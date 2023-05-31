@@ -1,0 +1,86 @@
+---
+title: "Deep Learning con conjunto de datos cub-200-2022"
+output:
+  html_document:
+      code_folding: "show"
+      toc: true
+      toc_depth: 2
+      toc_float: true
+      df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+set.seed(0)
+```
+
+Clasificación con el dataset [Cub_200_2011](https://www.vision.caltech.edu/datasets/cub_200_2011/).
+
+> Caltech-UCSD Birds-200-2011 (CUB-200-2011) is an extended version of the CUB-200 dataset, with roughly double the number of images per class and new part location annotations.
+
+Descargar datos de [Google Drive](https://drive.google.com/file/d/1TA7BTxkTNZ8oQy3F6rwgOJlzE7HF-bVC/view?usp=sharing).
+
+Comprobar que los datos se han descargado correctamente
+```{r}
+img_sample <- image_load(path = './data x20/001.Black_footed_Albatross/Black_Footed_Albatross_0001_796111.jpg', 
+                         target_size = c(150, 150))
+img_sample_array <- array_reshape(image_to_array(img_sample), c(1, 150, 150, 3))
+plot(as.raster(img_sample_array[1,,,] / 255))
+```
+
+# Carga de datos
+Rutas:
+
+```{r}
+images_dir  <- './data x20/'
+table_file  <- './data additional/image_attribute_labels.txt'
+attr_file   <- './data additional/attributes.txt'
+imgs_file   <- './data additional/images.txt'
+```
+
+## Cargar datos tabulares
+```{r}
+data_raw   <- read.table(table_file, sep = "" , header = F, fill = T)
+colnames(data_raw) <- c("Image_id", "Attr_id", "Value", "Certainty", "Time")
+```
+
+## Combinar con atributos e imagenes
+```{r}
+attributes <- read.table(attr_file, header = F)
+colnames(attributes) <- c("Attr_id", "Attr")
+
+images <- read.table(imgs_file, header = F)
+colnames(images) <- c("Image_id", "File")
+
+data_join   <- data_raw %>% 
+  left_join(attributes, by = "Attr_id") %>%
+  left_join(images, by = "Image_id")
+
+data <- data_join %>%
+  select(c(File, Attr, Value)) %>%
+  mutate(Attr = str_replace_all(Attr, ":", "_")) %>%
+  distinct(File, Attr, Value, .keep_all = TRUE) %>%
+  pivot_wider(names_from = Attr, values_from = Value) %>%
+  mutate_if(is.numeric, as.factor)
+
+head(data, n = 10)
+```
+
+
+# Análisis exploratorio simple
+
+## Valores de la imagen vista arriba
+```{r}
+data %>% 
+  filter(File == "001.Black_footed_Albatross/Black_Footed_Albatross_0001_796111.jpg")
+```
+
+
+## Distribución de variables
+
+```{r}
+ggplot(data) +
+  geom_histogram(aes(x = has_bill_shape__dagger, fill = has_bill_shape__dagger),
+                 stat="count")
+```

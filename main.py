@@ -29,3 +29,5 @@ RANDOM_SEED = 42
 
 # create an output folder
 os.makedirs(OUT_DIR, exist_ok=True)
+
+print(DEVICE)
