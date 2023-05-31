@@ -30,4 +30,39 @@ RANDOM_SEED = 42
 # create an output folder
 os.makedirs(OUT_DIR, exist_ok=True)
 
-print(DEVICE)
+def get_model_desc(pretrained=False, num_classes=200, use_attention=False):
+    """
+    Generates description string.
+    """
+    desc = list()
+
+    if pretrained:
+        desc.append('Transfer')
+    else:
+        desc.append('Baseline')
+
+    if num_classes == 204:
+        desc.append('Multitask')
+
+    if use_attention:
+        desc.append('Attention')
+
+    return '-'.join(desc)
+
+
+def log_accuracy(path_to_csv, desc, acc, sep='\t', newline='\n'):
+    """
+    Logs accuracy into a CSV-file.
+    """
+    file_exists = os.path.exists(path_to_csv)
+
+    mode = 'a'
+    if not file_exists:
+        mode += '+'
+
+    with open(path_to_csv, mode) as csv:
+        if not file_exists:
+            csv.write(f'setup{sep}accuracy{newline}')
+
+        csv.write(f'{desc}{sep}{acc}{newline}')
+
