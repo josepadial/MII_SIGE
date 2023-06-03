@@ -8,6 +8,7 @@ from torchvision import transforms, models, datasets
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix
+import mlflow
 
 
 # Custom Dataset class for loading images and additional data
@@ -46,7 +47,10 @@ additional_data_path = "./data additional"
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    transforms.Normalize(
+        mean=[0.485, 0.456, 0.406],
+        std=[0.229, 0.224, 0.225]
+    )
 ])
 
 # Load the combined dataset
@@ -84,13 +88,19 @@ train_transform = transforms.Compose([
     transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1),
     transforms.RandomRotation(20),
     transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    transforms.Normalize(
+        mean=[0.485, 0.456, 0.406],
+        std=[0.229, 0.224, 0.225]
+    )
 ])
 
 train_data.dataset.image_data.transform = train_transform
 
 # 2. Ajuste de tasa de aprendizaje
 scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
+
+# Iniciar un experimento de MLflow
+mlflow.start_run()
 
 # Training progress
 train_loss_history = []
@@ -146,6 +156,13 @@ for epoch in range(10):
     print('Epoch [{}/{}], Loss: {:.4f}, Val Accuracy: {:.2f}%'.format(epoch + 1, 10, running_loss / len(train_loader),
                                                                       accuracy))
 
+    # Registrar las métricas y parámetros relevantes en MLflow
+    mlflow.log_metric("train_loss", running_loss / len(train_loader), step=epoch)
+    mlflow.log_metric("val_accuracy", accuracy, step=epoch)
+
+# Finalizar el experimento de MLflow
+mlflow.end_run()
+
 # Plot training progress
 plt.figure(figsize=(10, 5))
 plt.subplot(1, 2, 1)
@@ -161,6 +178,13 @@ plt.ylabel('Validation Accuracy (%)')
 plt.title('Validation Accuracy Progress')
 
 plt.tight_layout()
+
+# Guardar la figura en MLflow
+fig_path = "training_progress.png"
+plt.savefig(fig_path)
+mlflow.log_artifact(fig_path)
+
+# Mostrar la figura
 plt.show()
 
 # Plot confusion matrix
@@ -180,6 +204,13 @@ for i, j in itertools.product(range(confusion_matrix_val.shape[0]), range(confus
              color="white" if confusion_matrix_val[i, j] > thresh else "black")
 
 plt.tight_layout()
+
+# Guardar la figura en MLflow
+fig_path = "confusion_matrix.png"
+plt.savefig(fig_path)
+mlflow.log_artifact(fig_path)
+
+# Mostrar la figura
 plt.ylabel('True Label')
 plt.xlabel('Predicted Label')
 plt.show()
