@@ -40,8 +40,8 @@ class ImageDataWithAdditionalDataset(Dataset):
 
 
 # Set the paths for image and additional data folders
-image_data_path = "./data x20"
-additional_data_path = "./data additional"
+image_data_path = "data x200"
+additional_data_path = "data additional"
 
 # Define transformations
 transform = transforms.Compose([
@@ -180,7 +180,7 @@ plt.title('Validation Accuracy Progress')
 plt.tight_layout()
 
 # Guardar la figura en MLflow
-fig_path = "training_progress.png"
+fig_path = f"{image_data_path}training_progress.png"
 plt.savefig(fig_path)
 mlflow.log_artifact(fig_path)
 
@@ -206,7 +206,7 @@ for i, j in itertools.product(range(confusion_matrix_val.shape[0]), range(confus
 plt.tight_layout()
 
 # Guardar la figura en MLflow
-fig_path = "confusion_matrix.png"
+fig_path = f"{image_data_path}confusion_matrix.png"
 plt.savefig(fig_path)
 mlflow.log_artifact(fig_path)
 
