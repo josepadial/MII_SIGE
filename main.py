@@ -69,39 +69,44 @@ val_loader = DataLoader(val_data, batch_size=32, shuffle=False)
 test_loader = DataLoader(test_data, batch_size=32, shuffle=False)
 
 # Clasificación multiclase
-model = models.resnet50(pretrained=True)
-num_features = model.fc.in_features
-model.fc = nn.Linear(num_features, len(data.image_data.classes))
+model1 = models.resnet50(pretrained=True)
+model2 = models.densenet121(pretrained=True)
+model3 = models.vgg16(pretrained=True)
+
+num_features1 = model1.fc.in_features
+num_features2 = model2.classifier.in_features
+num_features3 = model3.classifier[6].in_features
+
+model1.fc = nn.Linear(num_features1, len(data.image_data.classes))
+model2.classifier = nn.Linear(num_features2, len(data.image_data.classes))
+model3.classifier[6] = nn.Linear(num_features3, len(data.image_data.classes))
 
 # Ajuste de hiperparámetros, topología de la red, función de coste y optimizador
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # Fine Tuning
-for param in model.parameters():
+for param in model1.parameters():
     param.requires_grad = False
 
-for param in model.fc.parameters():
+for param in model1.fc.parameters():
     param.requires_grad = True
 
-model = model.to(device)
+for param in model2.parameters():
+    param.requires_grad = False
 
+for param in model2.classifier.parameters():
+    param.requires_grad = True
 
-# Define a custom loss function with variable cost
-class VariableCostLoss(nn.Module):
-    def __init__(self, num_classes):
-        super(VariableCostLoss, self).__init__()
-        self.num_classes = num_classes
-        self.cost_weights = torch.ones(num_classes)
+for param in model3.parameters():
+    param.requires_grad = False
 
-    def forward(self, input, target):
-        log_probs = torch.log_softmax(input, dim=1)
-        weighted_log_probs = log_probs * self.cost_weights.to(log_probs.device)
-        loss = nn.functional.nll_loss(weighted_log_probs, target)
-        return loss
+for param in model3.classifier[6].parameters():
+    param.requires_grad = True
 
+models = [model1, model2, model3]
 
-criterion = VariableCostLoss(num_classes=len(data.image_data.classes))
-optimizer = optim.Adam(model.parameters(), lr=0.001)
+criterions = [VariableCostLoss(num_classes=len(data.image_data.classes)) for _ in models]
+optimizers = [optim.Adam(model.parameters(), lr=0.001) for model in models]
 
 # Aplicar técnicas para mejora del aprendizaje
 
@@ -121,7 +126,7 @@ train_transform = transforms.Compose([
 train_data.dataset.image_data.transform = train_transform
 
 # 2. Ajuste de tasa de aprendizaje
-scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
+schedulers = [optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1) for optimizer in optimizers]
 
 # Iniciar un experimento de MLflow
 mlflow.start_run()
@@ -132,29 +137,33 @@ val_accuracy_history = []
 confusion_matrix_val = None
 
 # Entrenamiento del modelo
-model.train()
-
 for epoch in range(10):
-    running_loss = 0.0
+    running_loss = [0.0] * len(models)
 
     for images, labels, _ in train_loader:
         images = images.to(device)
         labels = labels.to(device)
 
-        optimizer.zero_grad()
+        for optimizer in optimizers:
+            optimizer.zero_grad()
 
-        outputs = model(images)
-        loss = criterion(outputs, labels)
-        loss.backward()
-        optimizer.step()
+        for idx, model in enumerate(models):
+            model.train()
+            outputs = model(images)
+            loss = criterions[idx](outputs, labels)
+            loss.backward()
+            optimizers[idx].step()
 
-        running_loss += loss.item()
+            running_loss[idx] += loss.item()
 
-    scheduler.step()  # Actualizar la tasa de aprendizaje
+    for scheduler in schedulers:
+        scheduler.step()  # Actualizar la tasa de aprendizaje
 
     # Calculate validation accuracy and confusion matrix
-    model.eval()
-    correct = 0
+    for model in models:
+        model.eval()
+
+    correct = [0] * len(models)
     total = 0
     predictions = []
     true_labels = []
@@ -164,25 +173,28 @@ for epoch in range(10):
             images = images.to(device)
             labels = labels.to(device)
 
-            outputs = model(images)
-            _, predicted = torch.max(outputs.data, 1)
+            outputs = [model(images) for model in models]
+            ensemble_outputs = torch.stack(outputs, dim=0).sum(dim=0)
+            _, predicted = torch.max(ensemble_outputs.data, 1)
             total += labels.size(0)
-            correct += (predicted == labels).sum().item()
+
+            for idx, pred in enumerate(predicted):
+                correct[idx] += (pred == labels).sum().item()
 
             predictions.extend(predicted.tolist())
             true_labels.extend(labels.tolist())
 
-    accuracy = 100 * correct / total
+    accuracy = [100 * correct[i] / total for i in range(len(models))]
     val_accuracy_history.append(accuracy)
     confusion_matrix_val = confusion_matrix(true_labels, predictions, normalize='true')
 
-    train_loss_history.append(running_loss / len(train_loader))
-    print('Epoch [{}/{}], Loss: {:.4f}, Val Accuracy: {:.2f}%'.format(epoch + 1, 10, running_loss / len(train_loader),
-                                                                      accuracy))
+    train_loss_history.append([loss / len(train_loader) for loss in running_loss])
+    print('Epoch [{}/{}], Losses: {}, Val Accuracy: {}'.format(epoch + 1, 10, [loss / len(train_loader) for loss in running_loss], accuracy))
 
     # Registrar las métricas y parámetros relevantes en MLflow
-    mlflow.log_metric("train_loss", running_loss / len(train_loader), step=epoch)
-    mlflow.log_metric("val_accuracy", accuracy, step=epoch)
+    for idx in range(len(models)):
+        mlflow.log_metric(f"train_loss_model{idx+1}", running_loss[idx] / len(train_loader), step=epoch)
+        mlflow.log_metric(f"val_accuracy_model{idx+1}", accuracy[idx], step=epoch)
 
 # Finalizar el experimento de MLflow
 mlflow.end_run()
@@ -190,16 +202,20 @@ mlflow.end_run()
 # Plot training progress
 plt.figure(figsize=(10, 5))
 plt.subplot(1, 2, 1)
-plt.plot(range(1, len(train_loss_history) + 1), train_loss_history)
+for idx in range(len(models)):
+    plt.plot(range(1, len(train_loss_history) + 1), [loss[idx] for loss in train_loss_history], label=f"Model {idx+1}")
 plt.xlabel('Epoch')
 plt.ylabel('Training Loss')
 plt.title('Training Loss Progress')
+plt.legend()
 
 plt.subplot(1, 2, 2)
-plt.plot(range(1, len(val_accuracy_history) + 1), val_accuracy_history)
+for idx in range(len(models)):
+    plt.plot(range(1, len(val_accuracy_history) + 1), [accuracy[idx] for accuracy in val_accuracy_history], label=f"Model {idx+1}")
 plt.xlabel('Epoch')
 plt.ylabel('Validation Accuracy (%)')
 plt.title('Validation Accuracy Progress')
+plt.legend()
 
 plt.tight_layout()
 
