@@ -75,6 +75,14 @@ model.fc = nn.Linear(num_features, len(data.image_data.classes))
 
 # Ajuste de hiperparámetros, topología de la red, función de coste y optimizador
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+# Fine Tuning
+for param in model.parameters():
+    param.requires_grad = False
+
+for param in model.fc.parameters():
+    param.requires_grad = True
+
 model = model.to(device)
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
