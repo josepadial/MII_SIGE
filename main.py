@@ -84,7 +84,23 @@ for param in model.fc.parameters():
     param.requires_grad = True
 
 model = model.to(device)
-criterion = nn.CrossEntropyLoss()
+
+
+# Define a custom loss function with variable cost
+class VariableCostLoss(nn.Module):
+    def __init__(self, num_classes):
+        super(VariableCostLoss, self).__init__()
+        self.num_classes = num_classes
+        self.cost_weights = torch.ones(num_classes)
+
+    def forward(self, input, target):
+        log_probs = torch.log_softmax(input, dim=1)
+        weighted_log_probs = log_probs * self.cost_weights.to(log_probs.device)
+        loss = nn.functional.nll_loss(weighted_log_probs, target)
+        return loss
+
+
+criterion = VariableCostLoss(num_classes=len(data.image_data.classes))
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
 # Aplicar técnicas para mejora del aprendizaje
